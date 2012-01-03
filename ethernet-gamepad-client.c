@@ -46,6 +46,8 @@ const char *bgFiles[FILENAME_COUNT] = {"bg.bmp",
     "/usr/local/share/ethernet-gamepad/bg.bmp",
     "/usr/share/ethernet-gamepad"};
 
+int axes = 0;
+
 int main(int argc, char *argv[]){
     SDL_Surface *screen, *image;
     SDL_Event event;
@@ -54,19 +56,46 @@ int main(int argc, char *argv[]){
     int i;
     int map[1024];
     uint8_t toSend;
-    int port;
+    int port = 0;
     int s;
 
     if(argc < 2){
-        fprintf(stderr, "Usage: %s IP [PORT]\n", argv[0]);
+        help:
+        fprintf(stderr, "Usage: %s IP [FLAGS]\n", argv[0]);
+        fprintf(stderr, "    -a    map the arrow keys to axes 0 and 1\n");
+        fprintf(stderr, "    -p PORT    set the port\n");
+        fprintf(stderr, "    -h    display this text\n");
         return 1;
     }
+    /* Parse options */
+    while((i = getopt(argc - 1, argv + 1, "ahp:")) >= 0){
+        switch(i){
+            case '?':
+                if(optopt == 'p'){
+                    fprintf(stderr, "Options -p requires an argument.\n");
+                    goto help;
+                }
+            case 'p':
+                port = atoi(optarg);
+                break;
+
+            case 'h':
+                goto help;
+
+            case 'a':
+                axes = 1;
+        }
+    }
+
     /* Try to set the port */
-    if(argc < 3 || !(port = strtoul(argv[2], NULL, 0))){
+    if(!port){
         port = DEFAULT_PORT;
     }
 
     printf("Connecting to %s using port %d.\n", argv[1], port);
+    if(axes){
+        printf("Using the arrow keys as axes.\n");
+    }
 
     /* Open the socket */
     s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -145,6 +174,13 @@ int main(int argc, char *argv[]){
     map[19] = 99;
     map[32] = 100;
     map[316] = 101;
+    /* Remap arrow keys if in axes mode */
+    if(axes){
+        map[273] = 106;
+        map[274] = 104;
+        map[275] = 103;
+        map[276] = 105;
+    }
     
     
     /* Initialize SDL */

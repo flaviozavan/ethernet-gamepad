@@ -42,6 +42,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define FILENAME_COUNT 3
 #define DEFAULT_PORT 3185
 #define MAX_CLIENTS 32
+#define AXIS_MIN -32767
+#define AXIS_MAX 32767
 
 const char *uinputFileNames[FILENAME_COUNT] = {"/dev/uinput",
     "/dev/input/uinput", "/dev/misc/uinput"};
@@ -118,8 +120,9 @@ int addUser(int s){
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &i, sizeof(i));
     setsockopt(s, IPPROTO_TCP, TCP_QUICKACK, &i, sizeof(i));
 
-    /* Enable key events */
+    /* Enable key and axis events */
     ioctl(fd, UI_SET_EVBIT, EV_KEY);
+    ioctl(fd, UI_SET_EVBIT, EV_ABS);
 
     /* Map most of the buttons */
     for(i = BTN_0; i <= BTN_THUMBR; i++){
@@ -129,6 +132,9 @@ int addUser(int s){
     for(i = BTN_TRIGGER_HAPPY1; i <= BTN_TRIGGER_HAPPY40; i++){
         ioctl(fd, UI_SET_KEYBIT, i);
     }
+    /* Map the axes */
+    ioctl(fd, UI_SET_ABSBIT, ABS_X);
+    ioctl(fd, UI_SET_ABSBIT, ABS_Y);
 
     /* Create the device */
     memset(&(users[nUsers].uidev), 0, sizeof(struct uinput_user_dev));
@@ -137,6 +143,10 @@ int addUser(int s){
     users[nUsers].uidev.id.vendor  = 0x569;
     users[nUsers].uidev.id.product = 0x318;
     users[nUsers].uidev.id.version = 1;
+    users[nUsers].uidev.absmin[ABS_X] = AXIS_MIN;
+    users[nUsers].uidev.absmax[ABS_X] = AXIS_MAX;
+    users[nUsers].uidev.absmin[ABS_Y] = AXIS_MIN;
+    users[nUsers].uidev.absmax[ABS_Y] = AXIS_MAX;
 
     write(fd, &(users[nUsers].uidev), sizeof(struct uinput_user_dev));
     ioctl(fd, UI_DEV_CREATE);
@@ -155,11 +165,22 @@ void process(int u, int len){
     for(i = 0; i < len; i++){
         /* The higher bit tells if it's a press or a release */
         k = buffer[i] & 0x7F;
-        if(k <= 102){
-            t = (buffer[i] & 0x80) >> 7;
+        t = (buffer[i] & 0x80) >> 7;
+        event.code = translation[k];
 
-            event.code = translation[k];
+        if(k <= 102){
+            event.type = EV_KEY;
             event.value = t;
+            write(users[u].fd, &event, sizeof(event));
+        }
+        else if(k <= 106){
+            event.type = EV_ABS;
+            if(k <= 104){
+                event.value = t * AXIS_MAX;
+            }
+            else {
+                event.value = t * AXIS_MIN;
+            }
             write(users[u].fd, &event, sizeof(event));
         }
     }
@@ -239,9 +260,12 @@ int main(int argc, char *argv[]){
     for(i = BTN_TRIGGER_HAPPY1; i <= BTN_TRIGGER_HAPPY40; i++){
         translation[i + 62 - BTN_TRIGGER_HAPPY] = i;
     }
+    translation[103] = ABS_X;
+    translation[104] = ABS_Y;
+    translation[105] = ABS_X;
+    translation[106] = ABS_Y;
     /* Zero the event struct */
     memset(&event, 0, sizeof(event));
-    event.type = EV_KEY;
 
     /* Wait for new clients and process the others */
     for(;;){
